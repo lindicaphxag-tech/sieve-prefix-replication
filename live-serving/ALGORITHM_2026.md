@@ -15,7 +15,7 @@ Cross-check on chutes 64k LRU: 0.726831, identical to PrefixSim's
 `block_hit_ratio=0.726831`, with the same 603,642,254 access count. On freeinference 64k
 the in-engine baseline is 0.910181 against PrefixSim's 0.917430; the 0.7 pp gap traces to
 request-skip/occupancy accounting on very long requests, so every comparison below is made
-inside a single engine, and absolute levels are quoted from the cross-checked chutes cells.
+inside a single engine, and absolute levels are quoted from the cross-checked cells.
 
 ## Two hit metrics, and the gap between them
 
@@ -93,15 +93,43 @@ several times at the back.
 
 ## The bound: how much any victim rule can win here
 
-Belady (offline optimal, same pool, same order) on chutes 64k: **0.760084**.
-LRU sits at 0.726831, so the entire headroom available to any history-based victim rule is
-**+3.33 pp (4.6 % relative)** - and SIEVE spends 1.32 pp of it going the wrong way.
+Belady (offline optimal, same pool, same order): **0.760084** on chutes 64k and
+**0.933723** on freeinference 64k, against LRU's 0.726831 / 0.917430. The entire headroom
+available to any history-based victim rule is therefore **+3.33 pp (4.6 % relative)** on
+chutes and **+1.63 pp (1.8 % relative)** on freeinference - and SIEVE spends 1.32 pp of the
+chutes headroom going the wrong way.
 
 That number is the reason the selector, not a new victim rule, is the contribution: on
 production traces victim choice is a second-order lever bounded at a few percentage points,
 while pool size and admission are first-order. It also explains the 2028 result: with
 pi ~ 0.65 (pool pressure high enough that a request's chain rarely survives), four policies
 land inside a 0.8 % band, because the bound itself collapses there.
+
+## Six published policies against that bound (chutes 64k, same pool, same order)
+
+| policy | hit ratio | delta vs LRU | self-evictions |
+|---|---|---|---|
+| Belady (offline optimum) | 0.760084 | +3.33 pp | 0 |
+| **LRU** | **0.726831** | - | 0 |
+| hyperbolic | 0.724643 | -0.22 pp | 579,784 |
+| SLRU | 0.723886 | -0.29 pp | 0 |
+| SIEVE | 0.713628 | -1.32 pp | 0 |
+| S3FIFO | 0.695840 | -3.10 pp | 1,037,094 |
+| W-TinyLFU | 0.623055 | -10.38 pp | 2,152,023 |
+| LFU | 0.380103 | -34.67 pp | 45,525,230 |
+
+Two readings. First, none of the six closes any of the 3.33 pp gap; the closest,
+hyperbolic, is still 0.22 pp under LRU, and the two frequency-based entries lose 10 and
+35 pp. Second, the self-eviction column is a protocol artefact, not a policy verdict:
+LFU, S3FIFO and W-TinyLFU take blocks the running request had already matched 45.5 M /
+1.04 M / 2.15 M times, which a real engine that pins a running request's blocks never does.
+Those three numbers cannot be compared with an engine at all, which is the same
+comparability rule the replay-order experiment established.
+
+So on this trace the victim-rule column is closed: an offline optimum worth 3.33 pp, six
+published policies at or below LRU, and four structure-aware rules of our own at exactly
+LRU. The lever that remains is how much of the pool exists and who gets admitted, not who
+gets evicted.
 
 ## Where the algorithm contribution actually sits
 
@@ -115,8 +143,8 @@ achievable incremental reuse. See `SELECTOR_ABLATION.md`.
 - `tools/replay2.cpp` - the engine used here: two metrics, LRU / SIEVE / orphan-first /
   capchain, request-level pinning, three-phase replay.
 - logs under `live_serving/logs/`: `rp2_chutes_64k_{lru,orphan,cc128,cc256,cc512,cc1024}.txt`,
-  `rp2_free_64k_{lru,orphan}_*.txt`, `ps_chutes_64k_batch.txt`, `rp_chutes_64k_{tlru,sdsieve}.txt`,
-  `rp_free_64k_{tlru,sdsieve}.txt`.
+  `rp2_free_64k_{lru,orphan}_*.txt`, `ps_chutes_64k_batch.txt`, `ps_free_64k_belady.txt`,
+  `rp_chutes_64k_{tlru,sdsieve}.txt`, `rp_free_64k_{tlru,sdsieve}.txt`.
 
 ## Second model, real engine: policy identity collapse at a small pool
 
