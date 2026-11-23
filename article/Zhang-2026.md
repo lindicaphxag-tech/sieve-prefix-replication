@@ -230,10 +230,11 @@ on these workloads a policy cannot gain much over plain LRU regardless of
 how clever it is. The remaining headroom is at small capacity, where
 LRU reaches only 24% to 53% of the ceiling.
 
-## Three attempts to beat LRU that did not work
+## Four attempts to beat LRU that did not work
 
-The gap at small capacity motivated three prefix-aware policies. All three
-are reported because two of them failed.
+The gap at small capacity motivated four prefix-aware policies. All four are
+reported, because one produced a large gain in exactly one setting and the
+other three ended at or below LRU almost everywhere.
 
 Dead-block reclamation. A resident block is useful only if all of its
 ancestors are resident; once an ancestor is evicted, the whole resident
@@ -264,11 +265,33 @@ while at 5% and 20% capacity K=4 falls to 0.0847 and 0.0851, losing 57% and
 smaller than the mean chain length, and the mean chain length here is 24
 blocks.
 
-Taken together, these three results say that the obvious ways to exploit
-chain structure are either already exploited by LRU or only exploitable
-under a fixed truncation that fails as capacity grows. I did not find a
-prefix-aware policy that dominates LRU on these four traces, and I would
-rather report that than tune a policy against them.
+Capacity-adaptive admission. The obvious repair is to replace the constant K
+with a quantity the cache can measure while it runs: the deepest depth at which
+every prefix family seen so far still holds a resident block,
+
+K = floor(B / N1),
+
+where B is the block budget and N1 the running count of distinct first blocks.
+The rule has no tuned constant and dissolves on its own when capacity grows. It
+also does not work, and the reason is arithmetic rather than implementation.
+Three of the four traces have one to four distinct first blocks, so on the
+conversation trace B/N1 equals B, on the two Meta-derived traces B/N1 is 236 to
+9,459 against a mean chain length of 17, and the rule admits everything,
+reproducing LRU to four decimal places on all twelve settings of those three
+traces. On the synthetic trace, which has 2,211 families, the same rule
+truncates to K=1 and reuse falls from 0.1548 to 0.0352 at 2% capacity and from
+0.3905 to 0.1602 at 20%. A second variant that also evicts resident blocks now
+deeper than K behaves identically once the rule stops truncating. The
+denominator is what fails: N1 measures prefix families, and the quantity that
+governs reuse is capacity per concurrently active chain, which the trace does
+not expose without arrival times. The 39.2% gain at K=4 therefore survives as a
+single hand-tuned setting and not as a rule.
+
+Taken together, these four results say that the obvious ways to exploit chain
+structure are either already exploited by LRU, or exploitable only by a fixed
+truncation whose adaptively derived counterpart collapses to LRU or to K=1. I
+did not find a prefix-aware policy that dominates LRU on these four traces, and
+I would rather report that than tune a policy against them.
 
 ## What concurrency changes
 
@@ -307,16 +330,18 @@ The extension reverses the turn-key claim for the workload class that
 matters most in current systems. On four public prefix-cache traces, LRU
 beats SIEVE in all eight capacity settings, by as much as 54%. The mechanism
 is structural: SIEVE's eviction target can orphan a prefix chain, while LRU's
-recency order protects the shared first blocks. Three prefix-aware policies
-tested here did not beat LRU, and two of them produced gains below one
-percent.
+recency order protects the shared first blocks. Four prefix-aware policies
+tested here did not beat LRU; one produced a large gain in a single hand-tuned
+setting, and the adaptive rule meant to generalise that gain collapsed to LRU
+on three traces and to depth one on the fourth.
 
-What would change this conclusion is a workload in which capacity is
-smaller than the chain length, where truncation at admission wins by 39%
-in the one setting measured, and a policy that adapts the admitted depth
-to available capacity without failing at larger capacity. I did not
-implement such a policy, and I do not claim the negative result extends
-beyond the four traces and the three capacities tested.
+What would change this conclusion is a workload in which capacity is smaller
+than the chain length, where truncation at admission wins by 39% in the one
+setting measured, together with a rule that derives that depth from
+concurrency rather than from the number of prefix families; the traces used
+here carry no arrival times for the object-cache experiment and too coarse a
+notion of family for the prefix experiment. I do not claim the negative result
+extends beyond the four traces and the three capacities tested.
 
 # Limitations
 
