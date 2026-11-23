@@ -1,0 +1,14 @@
+# build artefacts from the pandoc + xelatex chain
+article/Zhang-2026.tex
+article/Zhang-2026.aux
+article/Zhang-2026.log
+article/Zhang-2026.bbl
+article/Zhang-2026.bcf
+article/Zhang-2026.blg
+article/Zhang-2026.out
+article/Zhang-2026.run.xml
+article/make.log
+
+# traces are fetched, never redistributed
+sieve_data/
+kv_traces/

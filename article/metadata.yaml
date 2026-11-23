@@ -1,0 +1,25 @@
+title: "SIEVE is Simpler than LRU: an independent reimplementation, and a test of whether a turn-key eviction policy transfers to prefix caches"
+date: 2026-11-23
+authors:
+  - name: Zhibo Zhang
+    affiliation: Hangzhou Dianzi University, Hangzhou, Zhejiang, China
+    email: 24061721@hdu.edu.cn
+    orcid: 0009-0007-3533-1941
+type: replication
+domain: Computer Science
+language: Python
+original_article:
+  title: "SIEVE is Simpler than LRU: an Efficient Turn-Key Eviction Algorithm for Web Caches"
+  authors: "Yazhuo Zhang, Juncheng Yang, Yao Yue, Ymir Vigfusson, K. V. Rashmi"
+  venue: "NSDI 2024"
+  url: "https://www.usenix.org/conference/nsdi24/presentation/zhang-yazhuo"
+repositories:
+  article: "https://github.com/lindicaphxag-tech/sieve-prefix-replication/tree/main/article"
+  code: "https://github.com/lindicaphxag-tech/sieve-prefix-replication/tree/main/code"
+  data: "https://github.com/lindicaphxag-tech/sieve-prefix-replication/tree/main/data"
+keywords:
+  - cache eviction
+  - replication
+  - prefix cache
+  - LLM serving
+license: CC-BY-4.0
