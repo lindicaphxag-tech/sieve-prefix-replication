@@ -138,10 +138,28 @@ behind sigma_hat >= 0.25 and keeps LRU otherwise, 12/12 non-negative windows acr
 3 workloads x 4 pools, +18.3 % relative over pure LRU at 1,733 blocks, 69 % of the
 achievable incremental reuse. See `SELECTOR_ABLATION.md`.
 
+## Transfer test: a workload prior mislabels chutes, a windowed gate cannot
+
+`sigma_cross = 0.6451` on chutes, so the prior-based rule would run SIEVE there and pay its
+full-scale cost. The windowed rule instead measures SIEVE against LRU inside a window. To
+see what the opening window says, replay chutes' first 30,000 requests (38,291,337 block
+accesses, `tools/trunc.cpp` cuts them) at the same 64k pool:
+
+| policy | opening-window hit ratio (30k requests) |
+|---|---|
+| LRU | 0.657994 |
+| SIEVE | 0.657995 |
+
+The window reads as a tie (+0.0001 pp), so the guard holds LRU and never spends the
+1.32 pp the prior would have promised to win. Workload labels are unsafe across traces;
+measurement inside the window is safe by construction. That is why the deliverable is SEW-2
+with a measured gate rather than a sigma_hat classifier.
+
 ## Artefacts
 
 - `tools/replay2.cpp` - the engine used here: two metrics, LRU / SIEVE / orphan-first /
   capchain, request-level pinning, three-phase replay.
+- `tools/trunc.cpp` - cuts an `.lcp.zst` to its first N requests (window experiments).
 - logs under `live_serving/logs/`: `rp2_chutes_64k_{lru,orphan,cc128,cc256,cc512,cc1024}.txt`,
   `rp2_free_64k_{lru,orphan}_*.txt`, `ps_chutes_64k_batch.txt`, `ps_free_64k_belady.txt`,
   `rp_chutes_64k_{tlru,sdsieve}.txt`, `rp_free_64k_{tlru,sdsieve}.txt`.
