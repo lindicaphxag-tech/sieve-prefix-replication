@@ -3,14 +3,14 @@ title: "Reuse-Count Victim Choice for LLM Prefix Caches: A Measurable Window, On
 author: "Zhibo Zhang (Hangzhou Dianzi University) — ORCID 0009-0007-3533-1941"
 date: "2026-11-24"
 abstract: |
-  Prefix caching is standard in LLM serving stacks, but the eviction policy inside it is usually inherited from general-purpose caching research, where recency and insertion order are the only signals available. We measure the same policy pair (SIEVE vs LRU) in seven regimes, spanning 110 live runs on a real vLLM stack and two released production traces (1.26 billion block accesses, 625 thousand sessions). The difference runs from +24.6% (live conversation workload, 1733-block pool) to +0.014 pp and -1.70 pp (two production traces at 64k blocks). We show which counters make that difference predictable: the share of reuse that crosses request streams (sigma_cross), the pool's occupancy hit rate, and the visibility of pinned blocks (pi). We then show that the estimator cannot live inside the allocator: a proxy measured there never crossed threshold on any live workload and degenerated to LRU. Moving the estimator to the request stream and the actuator to the allocator yields a selector that recovers 57% of the attainable increment (0.0980 to 0.1121 at the operating point) with zero negative windows across twelve workload-capacity points. Finally we report the case that does not fit: a chat trace with sigma_cross = 0.645, servable-gap share 0.942, hit rate 0.727 and 48% revisit concentration still loses 1.70 pp at 64k blocks, and only 0.16 pp at 4x pool. We state the two hypotheses that survive and the two experiments that separate them, rather than fitting a narrative to it. The framework section states what 2026 reporting, 2027 design and 2028 placement each have to be able to measure.
+  Prefix caching is standard in LLM serving stacks, but the eviction policy inside it is usually inherited from general-purpose caching research, where recency and insertion order are the only signals available. We measure the same policy pair (SIEVE vs LRU) in seven regimes, spanning 110 live runs on a real vLLM stack and two released production traces (1.26 billion block accesses, 625 thousand sessions), and we follow the losing trace to a 1M-block pool. The difference runs from +24.6% (live conversation workload, 1733-block pool) to +0.014 pp, -1.70 pp and -0.075 pp (production traces at 64k, 256k and 1M blocks). We show which counters make that difference predictable: the share of reuse that crosses request streams (sigma_cross), the pool's occupancy hit rate, and the visibility of pinned blocks (pi). We then show that the estimator cannot live inside the allocator: a proxy measured there never crossed threshold on any live workload and degenerated to LRU. Moving the estimator to the request stream and the actuator to the allocator yields a selector that recovers 57% of the attainable increment (0.0980 to 0.1121 at the operating point) with zero negative windows across twelve workload-capacity points. We also report the case that does not fit, and the experiment that closes its first explanation: the chat trace satisfies every condition we can measure and still loses 1.70 pp at 64k, and the penalty shrinks 23x over a 16x pool without changing sign. The framework section states what 2026 reporting, 2027 design and 2028 placement each have to be able to measure.
 ---
 
 ## 0. What this paper claims
 
 1. **A window exists and it is measurable.** For the same policy pair the block-hit ratio difference spans +24.6 % to −1.70 pp across seven regimes. Three counters — cross-stream reuse share σ_cross, pool occupancy hit rate, and pin visibility π — determine whether the window can open at all, and the increment scales with σ_cross.
 2. **The selector must sit above the allocator.** Estimating σ from the request stream (where sessions are visible) and actuating the victim rule in the allocator recovers +14.4 % relative gain (0.0980 → 0.1121), i.e. 57 % of the attainable increment, with zero negative windows across 12 workload×capacity points. The same idea inside the allocator fails outright.
-3. **One counterexample is left open on purpose.** A chat trace satisfying every condition we can measure still loses at 64k blocks. Section 4 states the two surviving hypotheses and the experiment that separates them.
+3. **The counterexample is resolved to an axis, not to a story.** A chat trace satisfying every condition we can measure still loses at 64k blocks; across 64k/256k/1M the loss falls 1.70 → 0.16 → 0.075 pp and never changes sign. Section 4 states what that does and does not settle.
 
 ## 1. Live measurements (single node)
 
@@ -59,8 +59,9 @@ Replay results:
 | freeinference 1M | 0.9381 | 0.9382 | 0.9382 |
 | chutes 64k | 0.726900 | 0.714400 (**−1.70 pp**) | 0.696200 (−4.22 pp) |
 | chutes 256k | 0.748757 | 0.747115 (**−0.16 pp**) | 0.746891 (−0.19 pp) |
+| chutes 1M | 0.761576 | 0.760827 (**−0.075 pp**) | 0.758846 (−0.27 pp) |
 
-The two traces fail for different reasons, and only one of them is a condition we can name: freeinference fails on σ (83 % of its reuse is intra-session, so recency already captures it), chutes passes σ but fails somewhere we have not pinned (Section 4).
+The two traces fail for different reasons, and only one of them is a condition we can name: freeinference fails on σ (83 % of its reuse is intra-session, so recency already captures it), chutes passes σ but fails somewhere we have not fully pinned (Section 4).
 
 ## 3. Selector
 
@@ -77,7 +78,7 @@ Request-stream estimator: lineage = greedy longest-shared-prefix join against th
 | 1733 | toolagent | 0.4534 | 0.4642 | 0.4582 | **0.4534** | 0.4664 | 0 | −1.30 pp |
 | 1733 | synthetic | 0.0498 | 0.0530 | 0.0438 | **0.0498** | 0.0575 | 0 | −0.77 pp |
 
-Thresholds were fixed a priori from the necessary conditions and were **not** tuned on these traces. The regret is concentrated in windows where LFU-W would have won and the selector only had SIEVE available; extending the action set to three policies is the next experiment, not a claim.
+Thresholds were fixed a priori from the necessary conditions and were **not** tuned on these traces. Two variants were built and rejected on the same data: a three-action bandit with periodic exploration reaches 0.1037 (window 256) and 0.1067 (window 128, exploration every sixth window) against the prior-gated 0.1121, and it never selects LFU-W — a policy that needs its counters warmed cannot win the exploration window it is given. At six to twelve windows per trace, priors beat exploration; the regret that remains is concentrated where LFU-W would have won.
 
 ## 4. What the evidence supports, and what it does not
 
@@ -85,21 +86,18 @@ Supported:
 
 - SIEVE/LFU-W beat LRU **only** when (i) a non-trivial share of reuse is cross-stream, (ii) the pool does not already hold the working set (hit rate ≲ 0.85), and (iii) the evictor is asked at all (π small);
 - the increment scales with σ_cross: +1.9 % at σ = 0.41, +24.6 % at σ ≈ 1;
-- capacity monotonically shrinks the loss where the window is closed: chutes −1.70 → −0.16 pp at 4× pool;
+- where the window is closed, the loss is monotone in pool size and does not vanish: chutes −1.70 → −0.16 → −0.075 pp at 64k → 256k → 1M (penalty shrinks 23× over a 16× pool);
 - a request-stream estimator recovers a majority of the attainable gain without knowing the workload.
 
 Not supported, and stated as such:
 
-- the earlier "two-factor conjunction law" (σ_cross × coverage). chutes satisfies every factor we can measure — σ 0.645, F(64k) 0.942, hit 0.727, 48 % revisit concentration — and still loses 1.70 pp at 64k. Two hypotheses remain:
-  - **H1**: chutes has ≈ 1,170 blocks per request against a 65k-block pool, and hits occur at the prefix head, so a policy that evicts the newest block first is structurally penalised independent of cross-stream reuse;
-  - **H2**: replay fixes π = 0 while a real deployment of that trace may run at high concurrency, in which case the replay's π is simply not the deployment's π.
-  Separating them needs (a) chutes replay at 1M blocks — if the loss keeps halving, capacity/chain length is the axis; if it flattens, π is — and (b) an engine-side histogram of π. Both are specified in `TRACE_EVIDENCE_V2.md`.
+- the earlier "two-factor conjunction law" (σ_cross × coverage). chutes satisfies every factor we can measure — σ 0.645, F(64k) 0.942, hit 0.727, 48 % revisit concentration — and still loses 1.70 pp at 64k, and still loses at 1M where the pool covers 0.75 % of the address space. So the sign is **not** a capacity artefact: the surviving reading is structural — a request chain of ≈ 1,170 blocks against any pool in this range, with hits at the prefix head, penalises a policy that evicts the newest unvisited block first. What remains untested is the second mechanism: replay fixes π = 0, while a real deployment of that trace may run at high concurrency, in which case the replay's π is not the deployment's π; an engine-side π histogram is the next experiment.
 
 ## 5. Implications for 2026–2028
 
 - **2026** — report σ_cross, hit rate and π with every eviction result, otherwise numbers are not portable. All three are available from engine counters (session id, reuse count on the hit path, candidate refcount), with no extra hardware.
-- **2027** — stop designing evictors, design **selectors**: estimator in the frontend, actuator in the allocator. This work shows 57 % of attainable gain with zero negative windows; open problems are calibration across workloads and a three-policy action set.
-- **2028** — once prefill and decode are disaggregated, placement decides whether a request can meet its prefix at all; per-node eviction becomes second order unless placement is prefix-affinity aware.
+- **2027** — stop designing evictors, design **selectors**: estimator in the frontend, actuator in the allocator. This work shows 57 % of attainable gain with zero negative windows; open problems are calibration across workloads and a three-policy action set that does not require warm counters.
+- **2028** — once prefill and decode are disaggregated, placement decides whether a request can meet its prefix at all; per-node eviction becomes second order unless placement is prefix-affinity aware. The measurable test is the share of the pool held by refcount>0 blocks: when it exceeds half, no evictor is a first-order decision.
 
 ## 6. Reproduce
 
@@ -116,8 +114,9 @@ PrefixSim/_build/bin/prefixsim --trace trace/chutes.lcp.zst --cache-size 64k --a
 
 # selector
 python3 router_sim.py --capacity 1733
+python3 router_bandit.py --capacity 1733 --window 128 --explore 6
 ```
 
 ## 7. Artefacts
 
-`PAPER.md` (this file), `FRAMEWORK_2026_v5.md`, `TRACE_EVIDENCE_V2.md`, `ROUTER_RESULTS.md`, `gapmeas.cpp`, `router_sim.py`, `offline_sim.py`, `reuse_profile.py`, `out/` (110 live runs), `trace/` (both public traces), `PrefixSim/` (fork with `traceReuseStat`, PR pending upstream).
+`PAPER.md` (this file), `INNOVATION.md`, `FRAMEWORK_2026_v5.md`, `TRACE_EVIDENCE_V2.md`, `ROUTER_RESULTS.md`, `SELECTOR_VARIANTS.md`, `gapmeas.cpp`, `router_sim.py`, `router_bandit.py`, `offline_sim.py`, `reuse_profile.py`, `out/` (110 live runs), `trace/` (both public traces), `PrefixSim/` (fork with `traceReuseStat`, PR pending upstream).
